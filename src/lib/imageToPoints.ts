@@ -50,30 +50,34 @@ export async function imageToPoints({
 
       const brightness = (r + g + b) / 3;
 
-      // 배경이 너무 밝으면 점으로 안 씀
       if (brightness > brightnessThreshold) continue;
 
-      // 밝기를 이용해 약한 깊이감 부여
-      const z = mapRange(255 - brightness, 0, 255, -20, 20);
-
-      // points.push({
-      //   x: x - centerX,
-      //   y: -(y - centerY),
-      //   z,
-      //   brightness,
-      // });
+      const baseX = x - centerX;
+      const baseY = -(y - centerY);
+      const baseZ = 0;
 
       const layers = 4;
 
       for (let i = 0; i < layers; i++) {
+        const scatterX = baseX + (Math.random() - 0.5) * 2;
+        const scatterY = baseY + (Math.random() - 0.5) * 2;
+        const scatterZ = i * 2 + (Math.random() - 0.5) * 1.5;
+
         points.push({
-          x: x - centerX,
-          y: -(y - centerY),
-          z: i * 2 + (Math.random() - 0.5) * 1.5,
-          brightness
+          x: scatterX,
+          y: scatterY,
+          z: scatterZ,
+          brightness,
+
+          baseX,
+          baseY,
+          baseZ,
+
+          scatterX,
+          scatterY,
+          scatterZ,
         });
       }
-      
     }
   }
 
@@ -87,14 +91,4 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error(`이미지 로드 실패: ${src}`));
     img.src = src;
   });
-}
-
-function mapRange(
-  value: number,
-  inMin: number,
-  inMax: number,
-  outMin: number,
-  outMax: number
-) {
-  return ((value - inMin) / (inMax - inMin)) * (outMax - outMin) + outMin;
 }
