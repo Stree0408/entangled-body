@@ -1,4 +1,4 @@
-import { Point3D } from "@/types/point";
+import { BodyRegion, Point3D } from "@/types/point";
 
 type ImageToPointsOptions = {
   imageSrc: string;
@@ -49,12 +49,28 @@ export async function imageToPoints({
       if (a < 10) continue;
 
       const brightness = (r + g + b) / 3;
-
       if (brightness > brightnessThreshold) continue;
 
       const baseX = x - centerX;
       const baseY = -(y - centerY);
       const baseZ = 0;
+
+      const region = classifyRegion({
+        x: baseX,
+        y: baseY,
+        width,
+        height,
+        brightness,
+      });
+
+      const clusterId = getClusterId({
+        x: baseX,
+        y: baseY,
+        width,
+        height,
+        gridCols: 10, // 더 작은 cluster로 쪼개고 싶을 시
+        gridRows: 14, // 더 작은 cluster로 쪼개고 싶을 시 (더 큰 value)
+      });
 
       const layers = 4;
 
@@ -76,12 +92,87 @@ export async function imageToPoints({
           scatterX,
           scatterY,
           scatterZ,
+
+          region,
+          clusterId,
         });
       }
     }
   }
 
   return points;
+}
+
+function classifyRegion({
+  x,
+  y,
+  width,
+  height,
+  brightness,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  brightness: number;
+}): BodyRegion {
+  const halfW = width / 2;
+  const halfH = height / 2;
+
+  if (y > halfH * 0.35 && brightness < 110) {
+    return "hair";
+  }
+
+  if (y > halfH * 0.02 && x > -halfW * 0.22 && x < halfW * 0.22) {
+    return "face";
+  }
+
+  if (
+    y > -halfH * 0.08 &&
+    y <= halfH * 0.02 &&
+    x > -halfW * 0.12 &&
+    x < halfW * 0.12
+  ) {
+    return "neck";
+  }
+
+  if (
+    y > -halfH * 0.28 &&
+    y <= halfH * 0.02 &&
+    (x < -halfW * 0.2 || x > halfW * 0.2)
+  ) {
+    return "shoulders";
+  }
+
+  if (x > -halfW * 0.28 && x < halfW * 0.28) {
+    return "chest";
+  }
+
+  return "unknown";
+}
+
+function getClusterId({   // 점을 작은 격자 셀에 배정
+  x,
+  y,
+  width,
+  height,
+  gridCols,
+  gridRows,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  gridCols: number;
+  gridRows: number;
+}) {
+  const normalizedX = (x + width / 2) / width;
+  const normalizedY = (height / 2 - y) / height;
+
+  const col = Math.max(0, Math.min(gridCols - 1, Math.floor(normalizedX * gridCols)));
+  const row = Math.max(0, Math.min(gridRows - 1, Math.floor(normalizedY * gridRows)));
+
+  return row * gridCols + col;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
