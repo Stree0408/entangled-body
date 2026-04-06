@@ -2,33 +2,118 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Point3D } from "@/types/point";
 import { useFrame, useThree } from "@react-three/fiber";
+import { Point3D } from "@/types/point";
 import { generateEntanglementMap } from "@/lib/entanglement";
 
 type PointCloudProps = {
   points: Point3D[];
 };
 
+type ClusterCenter = {
+  clusterId: number;
+  x: number;
+  y: number;
+  z: number;
+};
+
+type Edge = {
+  from: number;
+  to: number;
+};
+
+type Pulse = {
+  from: number;
+  to: number;
+  startTime: number;
+  duration: number;
+};
+
+const POSITION_SCALE = 0.02;
+const HOVER_RADIUS = 0.22;
+
 export default function PointCloud({ points }: PointCloudProps) {
   const pointsRef = useRef<THREE.Points>(null);
-  const materialRef = useRef<THREE.PointsMaterial>(null);
+  const pointsMaterialRef = useRef<THREE.PointsMaterial>(null);
+
+  const lineRef = useRef<THREE.LineSegments>(null);
+  const lineMaterialRef = useRef<THREE.LineBasicMaterial>(null);
+
+  const pulseRef = useRef<THREE.Points>(null);
+  const pulseMaterialRef = useRef<THREE.PointsMaterial>(null);
+
   const { mouse, gl } = useThree();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [pulses, setPulses] = useState<Pulse[]>([]);
 
   const entanglementMap = useMemo(() => {
     return generateEntanglementMap(points);
   }, [points]);
 
-  const geometry = useMemo(() => {
+  const clusterCenters = useMemo<ClusterCenter[]>(() => {
+    const map = new Map<number, { sumX: number; sumY: number; sumZ: number; count: number }>();
+
+    for (const p of points) {
+      const current = map.get(p.clusterId) ?? {
+        sumX: 0,
+        sumY: 0,
+        sumZ: 0,
+        count: 0,
+      };
+
+      current.sumX += p.baseX;
+      current.sumY += p.baseY;
+      current.sumZ += p.baseZ;
+      current.count += 1;
+
+      map.set(p.clusterId, current);
+    }
+
+    return Array.from(map.entries()).map(([clusterId, value]) => ({
+      clusterId,
+      x: (value.sumX / value.count) * POSITION_SCALE,
+      y: (value.sumY / value.count) * POSITION_SCALE,
+      z: (value.sumZ / value.count) * POSITION_SCALE,
+    }));
+  }, [points]);
+
+  const clusterCenterMap = useMemo(() => {
+    const map = new Map<number, ClusterCenter>();
+    for (const c of clusterCenters) {
+      map.set(c.clusterId, c);
+    }
+    return map;
+  }, [clusterCenters]);
+
+  const edges = useMemo<Edge[]>(() => {
+    const result: Edge[] = [];
+    const seen = new Set<string>();
+
+    for (const [fromClusterIdStr, linked] of Object.entries(entanglementMap)) {
+      const from = Number(fromClusterIdStr);
+
+      for (const to of linked) {
+        const key = from < to ? `${from}-${to}` : `${to}-${from}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        if (!clusterCenterMap.has(from) || !clusterCenterMap.has(to)) continue;
+        result.push({ from, to });
+      }
+    }
+
+    return result;
+  }, [entanglementMap, clusterCenterMap]);
+
+  const pointsGeometry = useMemo(() => {
     const positions = new Float32Array(points.length * 3);
     const colors = new Float32Array(points.length * 3);
 
     points.forEach((point, index) => {
-      positions[index * 3] = point.scatterX * 0.02;
-      positions[index * 3 + 1] = point.scatterY * 0.02;
-      positions[index * 3 + 2] = point.scatterZ * 0.02;
+      positions[index * 3] = point.scatterX * POSITION_SCALE;
+      positions[index * 3 + 1] = point.scatterY * POSITION_SCALE;
+      positions[index * 3 + 2] = point.scatterZ * POSITION_SCALE;
 
       const baseColor = 1 - point.brightness / 255;
       colors[index * 3] = baseColor;
@@ -36,25 +121,85 @@ export default function PointCloud({ points }: PointCloudProps) {
       colors[index * 3 + 2] = baseColor;
     });
 
-    const bufferGeometry = new THREE.BufferGeometry();
-    bufferGeometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(positions, 3)
-    );
-    bufferGeometry.setAttribute(
-      "color",
-      new THREE.BufferAttribute(colors, 3)
-    );
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-    return bufferGeometry;
+    return geometry;
   }, [points]);
+
+  const lineGeometry = useMemo(() => {
+    const positions = new Float32Array(edges.length * 2 * 3);
+    const colors = new Float32Array(edges.length * 2 * 3);
+
+    edges.forEach((edge, index) => {
+      const from = clusterCenterMap.get(edge.from);
+      const to = clusterCenterMap.get(edge.to);
+      if (!from || !to) return;
+
+      const i = index * 6;
+
+      positions[i] = from.x;
+      positions[i + 1] = from.y;
+      positions[i + 2] = from.z;
+
+      positions[i + 3] = to.x;
+      positions[i + 4] = to.y;
+      positions[i + 5] = to.z;
+
+      // 기본은 거의 안 보이게
+      colors[i] = 0.15;
+      colors[i + 1] = 0.2;
+      colors[i + 2] = 0.28;
+
+      colors[i + 3] = 0.15;
+      colors[i + 4] = 0.2;
+      colors[i + 5] = 0.28;
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    return geometry;
+  }, [edges, clusterCenterMap]);
+
+  const pulseGeometry = useMemo(() => {
+    const maxPulseCount = Math.max(edges.length, 1);
+    const positions = new Float32Array(maxPulseCount * 3);
+    const colors = new Float32Array(maxPulseCount * 3);
+
+    for (let i = 0; i < maxPulseCount; i++) {
+      positions[i * 3] = 9999;
+      positions[i * 3 + 1] = 9999;
+      positions[i * 3 + 2] = 9999;
+
+      colors[i * 3] = 1;
+      colors[i * 3 + 1] = 1;
+      colors[i * 3 + 2] = 1;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    return geometry;
+  }, [edges.length]);
 
   useEffect(() => {
     const canvas = gl.domElement;
 
     function handleClick() {
-      setIsCollapsed((prev) => !prev);
+  setIsCollapsed((prev) => {
+    const next = !prev;
+
+    if (next) {
+      setPulses([]);
     }
+
+    return next;
+    });
+  }
 
     canvas.addEventListener("click", handleClick);
     return () => {
@@ -62,30 +207,105 @@ export default function PointCloud({ points }: PointCloudProps) {
     };
   }, [gl]);
 
-  useFrame(() => {
-    if (!pointsRef.current || !materialRef.current) return;
+  useEffect(() => {
+    if (!points.length) return;
 
-    const geometry = pointsRef.current.geometry;
-    const positionAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
-    const colorAttr = geometry.getAttribute("color") as THREE.BufferAttribute;
+    let pulseInterval: number | null = null;
+    let lastHoveredCluster = -1;
+
+    const tick = () => {
+      if (isCollapsed) return;
+
+      const hoverX = mouse.x * 2.2;
+      const hoverY = mouse.y * 3.0;
+
+      let hoveredClusterId = -1;
+
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const px = point.baseX * POSITION_SCALE;
+        const py = point.baseY * POSITION_SCALE;
+
+        const dx = px - hoverX;
+        const dy = py - hoverY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < HOVER_RADIUS) {
+          hoveredClusterId = point.clusterId;
+          break;
+        }
+      }
+
+      if (hoveredClusterId === -1) {
+        lastHoveredCluster = -1;
+        return;
+      }
+
+      const now = performance.now();
+
+      if (lastHoveredCluster !== hoveredClusterId) {
+        lastHoveredCluster = hoveredClusterId;
+
+        const linked = entanglementMap[hoveredClusterId] ?? [];
+        const newPulses: Pulse[] = linked.map((to, index) => ({
+          from: hoveredClusterId,
+          to,
+          startTime: now + index * 90,
+          duration: 650,
+        }));
+
+        setPulses(newPulses);
+        return;
+      }
+    };
+
+    tick();
+    pulseInterval = window.setInterval(tick, 220);
+
+    return () => {
+      if (pulseInterval) window.clearInterval(pulseInterval);
+    };
+  }, [mouse.x, mouse.y, points, isCollapsed, entanglementMap]);
+
+  useFrame(() => {
+    if (
+      !pointsRef.current ||
+      !pointsMaterialRef.current ||
+      !lineRef.current ||
+      !pulseRef.current
+    ) {
+      return;
+    }
+
+    const now = performance.now();
+
+    const pointGeometry = pointsRef.current.geometry;
+    const pointPositionAttr = pointGeometry.getAttribute("position") as THREE.BufferAttribute;
+    const pointColorAttr = pointGeometry.getAttribute("color") as THREE.BufferAttribute;
+
+    const lineGeometry = lineRef.current.geometry;
+    const lineColorAttr = lineGeometry.getAttribute("color") as THREE.BufferAttribute;
+
+    const pulseGeometry = pulseRef.current.geometry;
+    const pulsePositionAttr = pulseGeometry.getAttribute("position") as THREE.BufferAttribute;
+    const pulseColorAttr = pulseGeometry.getAttribute("color") as THREE.BufferAttribute;
 
     const hoverX = mouse.x * 2.2;
     const hoverY = mouse.y * 3.0;
-    const hoverRadius = 0.22;
 
     let hoveredClusterId = -1;
 
     if (!isCollapsed) {
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
-        const px = point.baseX * 0.02;
-        const py = point.baseY * 0.02;
+        const px = point.baseX * POSITION_SCALE;
+        const py = point.baseY * POSITION_SCALE;
 
         const dx = px - hoverX;
         const dy = py - hoverY;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < hoverRadius) {
+        if (dist < HOVER_RADIUS) {
           hoveredClusterId = point.clusterId;
           break;
         }
@@ -95,29 +315,30 @@ export default function PointCloud({ points }: PointCloudProps) {
     const linkedClusters =
       hoveredClusterId >= 0 ? entanglementMap[hoveredClusterId] ?? [] : [];
 
+    // points update
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
 
-      const currentX = positionAttr.getX(i);
-      const currentY = positionAttr.getY(i);
-      const currentZ = positionAttr.getZ(i);
+      const currentX = pointPositionAttr.getX(i);
+      const currentY = pointPositionAttr.getY(i);
+      const currentZ = pointPositionAttr.getZ(i);
 
-      const pointScreenX = point.baseX * 0.02;
-      const pointScreenY = point.baseY * 0.02;
+      const pointScreenX = point.baseX * POSITION_SCALE;
+      const pointScreenY = point.baseY * POSITION_SCALE;
 
       const dx = pointScreenX - hoverX;
       const dy = pointScreenY - hoverY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      const baseX = point.baseX * 0.02;
-      const baseY = point.baseY * 0.02;
-      const baseZ = point.baseZ * 0.02;
+      const baseX = point.baseX * POSITION_SCALE;
+      const baseY = point.baseY * POSITION_SCALE;
+      const baseZ = point.baseZ * POSITION_SCALE;
 
-      const scatterX = point.scatterX * 0.02;
-      const scatterY = point.scatterY * 0.02;
-      const scatterZ = point.scatterZ * 0.02;
+      const scatterX = point.scatterX * POSITION_SCALE;
+      const scatterY = point.scatterY * POSITION_SCALE;
+      const scatterZ = point.scatterZ * POSITION_SCALE;
 
-      const isDirectHover = dist < hoverRadius;
+      const isDirectHover = dist < HOVER_RADIUS;
       const isHoveredCluster = point.clusterId === hoveredClusterId;
       const isLinkedCluster = linkedClusters.includes(point.clusterId);
 
@@ -127,19 +348,16 @@ export default function PointCloud({ points }: PointCloudProps) {
       let lerpFactor = 0.05;
 
       if (isCollapsed) {
-        // Day 5: 전체 collapse
         targetX = baseX;
         targetY = baseY;
         targetZ = baseZ;
         lerpFactor = 0.14;
       } else if (isDirectHover || isHoveredCluster) {
-        // Day 4: 직접 hover cluster
         targetX = baseX;
         targetY = baseY;
         targetZ = baseZ;
         lerpFactor = 0.15;
       } else if (isLinkedCluster) {
-        // Day 4: entangled cluster
         targetX = THREE.MathUtils.lerp(scatterX, baseX, 0.45);
         targetY = THREE.MathUtils.lerp(scatterY, baseY, 0.45);
         targetZ = THREE.MathUtils.lerp(scatterZ, baseZ, 0.45);
@@ -150,51 +368,177 @@ export default function PointCloud({ points }: PointCloudProps) {
       const nextY = THREE.MathUtils.lerp(currentY, targetY, lerpFactor);
       const nextZ = THREE.MathUtils.lerp(currentZ, targetZ, lerpFactor);
 
-      positionAttr.setXYZ(i, nextX, nextY, nextZ);
+      pointPositionAttr.setXYZ(i, nextX, nextY, nextZ);
 
       const baseColor = 1 - point.brightness / 255;
 
       if (isCollapsed) {
-        colorAttr.setXYZ(i, 1, 1, 1);
+        pointColorAttr.setXYZ(i, 1, 1, 1);
       } else if (isDirectHover || isHoveredCluster) {
-        colorAttr.setXYZ(i, 1, 1, 1);
+        pointColorAttr.setXYZ(i, 1, 1, 1);
       } else if (isLinkedCluster) {
-        colorAttr.setXYZ(i, 0.6, 0.8, 1);
+        pointColorAttr.setXYZ(i, 0.55, 0.8, 1.0);
       } else {
-        colorAttr.setXYZ(i, baseColor, baseColor, baseColor);
+        pointColorAttr.setXYZ(i, baseColor, baseColor, baseColor);
       }
     }
 
-    positionAttr.needsUpdate = true;
-    colorAttr.needsUpdate = true;
+    pointPositionAttr.needsUpdate = true;
+    pointColorAttr.needsUpdate = true;
 
-    // opacity 증가
-    const targetOpacity = isCollapsed ? 1.0 : 0.95;
-    materialRef.current.opacity = THREE.MathUtils.lerp(
-      materialRef.current.opacity,
-      targetOpacity,
+  // line update
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const baseIndex = i * 2;
+
+    const isHoveredEdge =
+      hoveredClusterId >= 0 &&
+      (edge.from === hoveredClusterId || edge.to === hoveredClusterId);
+
+    // const isLinkedEdge =
+    //   hoveredClusterId >= 0 &&
+    //   (linkedClusters.includes(edge.from) || linkedClusters.includes(edge.to));
+
+    // default value: black
+    let r = 0.08;
+    let g = 0.0;
+    let b = 0.0;
+
+    // turn to red when hovered
+    if (!isCollapsed) {
+      if (isHoveredEdge) {
+        // hover된 cluster와 직접 연결된 선
+        r = 1.0;
+        g = 0.12;
+        b = 0.12;
+      } 
+      // else if (isLinkedEdge) {
+      //   // 연결된 cluster끼리의 연관 선은 더 약하게
+      //   r = 0.55;
+      //   g = 0.05;
+      //   b = 0.05;
+      // }
+    }
+
+    lineColorAttr.setXYZ(baseIndex, r, g, b);
+    lineColorAttr.setXYZ(baseIndex + 1, r, g, b);
+  }
+
+  lineColorAttr.needsUpdate = true;
+
+    lineColorAttr.needsUpdate = true;
+
+    // pulse update
+    const activePulses = pulses.filter(
+      (pulse) => now >= pulse.startTime && now <= pulse.startTime + pulse.duration
+    );
+
+    const maxPulseCount = pulsePositionAttr.count;
+
+    for (let i = 0; i < maxPulseCount; i++) {
+      if (i >= activePulses.length) {
+        pulsePositionAttr.setXYZ(i, 9999, 9999, 9999);
+        pulseColorAttr.setXYZ(i, 1, 1, 1);
+        continue;
+      }
+
+      const pulse = activePulses[i];
+      const from = clusterCenterMap.get(pulse.from);
+      const to = clusterCenterMap.get(pulse.to);
+
+      if (!from || !to) {
+        pulsePositionAttr.setXYZ(i, 9999, 9999, 9999);
+        continue;
+      }
+
+      const progress = THREE.MathUtils.clamp(
+        (now - pulse.startTime) / pulse.duration,
+        0,
+        1
+      );
+
+      const x = THREE.MathUtils.lerp(from.x, to.x, progress);
+      const y = THREE.MathUtils.lerp(from.y, to.y, progress);
+      const z = THREE.MathUtils.lerp(from.z, to.z, progress);
+
+      pulsePositionAttr.setXYZ(i, x, y, z);
+
+      const glow = 0.7 + 0.3 * Math.sin(progress * Math.PI);
+      pulseColorAttr.setXYZ(i, 0.8 * glow, 0.92 * glow, 1.0 * glow);
+    }
+
+    pulsePositionAttr.needsUpdate = true;
+    pulseColorAttr.needsUpdate = true;
+
+    // material update
+    const pointTargetOpacity = isCollapsed ? 1.0 : 0.95;
+    pointsMaterialRef.current.opacity = THREE.MathUtils.lerp(
+      pointsMaterialRef.current.opacity,
+      pointTargetOpacity,
       0.08
     );
 
-    // 점 크기도 살짝 키우면 선명해 보임
-    const targetSize = isCollapsed ? 0.038 : 0.03;
-    materialRef.current.size = THREE.MathUtils.lerp(
-      materialRef.current.size,
-      targetSize,
+    const pointTargetSize = isCollapsed ? 0.038 : 0.03;
+    pointsMaterialRef.current.size = THREE.MathUtils.lerp(
+      pointsMaterialRef.current.size,
+      pointTargetSize,
       0.08
     );
+
+    if (lineMaterialRef.current) {
+      const targetLineOpacity =
+        isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 0.55 : 0.12;
+
+      lineMaterialRef.current.opacity = THREE.MathUtils.lerp(
+        lineMaterialRef.current.opacity,
+        targetLineOpacity,
+        0.08
+      );
+    }
+
+    if (pulseMaterialRef.current) {
+      const targetPulseOpacity = isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 1.0 : 0.0;
+      pulseMaterialRef.current.opacity = THREE.MathUtils.lerp(
+        pulseMaterialRef.current.opacity,
+        targetPulseOpacity,
+        0.12
+      );
+    }
   });
 
   return (
-    <points ref={pointsRef} geometry={geometry}>
-      <pointsMaterial
-        ref={materialRef}
-        size={0.03}
-        vertexColors
-        sizeAttenuation
-        transparent
-        opacity={0.95}
-      />
-    </points>
+    <group>
+      <lineSegments ref={lineRef} geometry={lineGeometry}>
+        <lineBasicMaterial
+          ref={lineMaterialRef}
+          vertexColors
+          transparent
+          opacity={0.18}
+        />
+      </lineSegments>
+
+      <points ref={pulseRef} geometry={pulseGeometry}>
+        <pointsMaterial
+          ref={pulseMaterialRef}
+          size={0.06}
+          vertexColors
+          sizeAttenuation
+          transparent
+          opacity={0}
+          depthWrite={false}
+        />
+      </points>
+
+      <points ref={pointsRef} geometry={pointsGeometry}>
+        <pointsMaterial
+          ref={pointsMaterialRef}
+          size={0.03}
+          vertexColors
+          sizeAttenuation
+          transparent
+          opacity={0.95}
+        />
+      </points>
+    </group>
   );
 }

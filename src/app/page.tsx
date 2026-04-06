@@ -25,7 +25,7 @@ export default function Page() {
         setPoints(result);
       } catch (err) {
         console.error(err);
-        setError("점 데이터를 만드는 중 오류가 발생했습니다.");
+        setError("error occured during creating points");
       } finally {
         setLoading(false);
       }
@@ -38,9 +38,8 @@ export default function Page() {
     <main className="min-h-screen bg-neutral-950 text-white px-6 py-10">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="text-4xl font-bold">Entangled Body MVP - Day 2</h1>
+          <h1 className="text-4xl font-bold">Entangled Body MVP</h1>
           <p className="text-neutral-400 mt-2">
-            고정 이미지를 point cloud로 렌더링하는 단계
           </p>
         </div>
 
@@ -51,7 +50,7 @@ export default function Page() {
           <>
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
               <p className="text-sm text-neutral-300">
-                생성된 점 개수:{" "}
+                Numer of points created:{" "}
                 <span className="font-bold text-white">{points.length}</span>
               </p>
             </div>
