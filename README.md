@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Entangled Body
 
-## Getting Started
+An interactive quantum-inspired art system that allows users to experience the human body as an interconnected, non-local system.
 
-First, run the development server:
+---
+
+## 🧠 Concept
+
+This project is inspired by traditional East Asian medicine, where treatment is applied not directly to the painful area, but to a connected region of the body.
+
+We extend this idea into a quantum-inspired framework:
+
+> The human body is not a collection of independent parts, but a single entangled system.
+
+Instead of explaining quantum concepts, this project allows users to *experience* them through interaction.
+
+---
+
+## ⚛️ Core Experience
+
+### 1. Superposition
+- The body is not clearly defined.
+- Point clouds form ambiguous structures.
+- From certain angles, a human shape emerges — from others, it dissolves.
+
+### 2. Measurement
+- User interaction acts as "observation".
+- Hovering or focusing on a region changes the system state.
+
+### 3. Entanglement
+- Body regions are non-locally connected.
+- Interacting with one part triggers reactions in distant parts.
+
+### 4. Probabilistic Behavior
+- The same interaction does not always produce the same result.
+- Each session generates a different structure.
+
+### 5. Collapse
+- Upon interaction (click), the system converges.
+- Scattered points align into a coherent human form.
+
+---
+
+## 🎮 MVP Features
+
+- Point cloud-based human visualization
+- View-dependent structure visibility
+- Hover interaction with local + non-local responses
+- Entangled cluster connections (visualized with lines)
+- Click-triggered collapse animation
+
+---
+
+## 🛠 Tech Stack
+
+- **Frontend**: Next.js, React
+- **3D Rendering**: Three.js, React Three Fiber
+- **Graphics**: Canvas API
+- **Future Integration**:
+  - Qiskit (quantum circuit generation)
+  - IonQ (quantum execution)
+
+---
+
+## 🧪 Quantum Integration (Planned)
+
+Currently, randomness is generated using `Math.random()`.
+
+In future versions:
+- Entanglement maps will be generated using quantum circuits
+- Collapse states will be sampled from quantum measurement outcomes
+- System behavior will be influenced by real quantum distributions
+
+---
+
+## 📦 Installation
 
 ```bash
+git clone https://github.com/your-repo/entangled-body
+cd entangled-body
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
