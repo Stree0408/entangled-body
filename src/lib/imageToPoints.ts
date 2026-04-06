@@ -9,9 +9,9 @@ type ImageToPointsOptions = {
 
 export async function imageToPoints({
   imageSrc,
-  maxWidth = 160,
-  sampleStep = 2,
-  brightnessThreshold = 240,
+  maxWidth = 140,
+  sampleStep = 3,
+  brightnessThreshold = 235,
 }: ImageToPointsOptions): Promise<Point3D[]> {
   const img = await loadImage(imageSrc);
 
@@ -51,6 +51,10 @@ export async function imageToPoints({
       const brightness = (r + g + b) / 3;
       if (brightness > brightnessThreshold) continue;
 
+      // 너무 많은 점 생성 방지
+      const keepChance = brightness < 90 ? 0.85 : 0.55;
+      if (Math.random() > keepChance) continue;
+
       const baseX = x - centerX;
       const baseY = -(y - centerY);
       const baseZ = 0;
@@ -68,16 +72,16 @@ export async function imageToPoints({
         y: baseY,
         width,
         height,
-        gridCols: 10, // 더 작은 cluster로 쪼개고 싶을 시
-        gridRows: 14, // 더 작은 cluster로 쪼개고 싶을 시 (더 큰 value)
+        gridCols: 8,
+        gridRows: 10,
       });
 
-      const layers = 4;
+      const layers = 2;
 
       for (let i = 0; i < layers; i++) {
-        const scatterX = baseX + (Math.random() - 0.5) * 2;
-        const scatterY = baseY + (Math.random() - 0.5) * 2;
-        const scatterZ = i * 2 + (Math.random() - 0.5) * 1.5;
+        const scatterX = baseX + (Math.random() - 0.5) * 1.2;
+        const scatterY = baseY + (Math.random() - 0.5) * 1.2;
+        const scatterZ = (i - 0.5) * 1.4 + (Math.random() - 0.5) * 0.6;
 
         points.push({
           x: scatterX,
@@ -151,7 +155,7 @@ function classifyRegion({
   return "unknown";
 }
 
-function getClusterId({   // 점을 작은 격자 셀에 배정
+function getClusterId({
   x,
   y,
   width,
@@ -169,8 +173,14 @@ function getClusterId({   // 점을 작은 격자 셀에 배정
   const normalizedX = (x + width / 2) / width;
   const normalizedY = (height / 2 - y) / height;
 
-  const col = Math.max(0, Math.min(gridCols - 1, Math.floor(normalizedX * gridCols)));
-  const row = Math.max(0, Math.min(gridRows - 1, Math.floor(normalizedY * gridRows)));
+  const col = Math.max(
+    0,
+    Math.min(gridCols - 1, Math.floor(normalizedX * gridCols))
+  );
+  const row = Math.max(
+    0,
+    Math.min(gridRows - 1, Math.floor(normalizedY * gridRows))
+  );
 
   return row * gridCols + col;
 }

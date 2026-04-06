@@ -5,9 +5,13 @@ import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Point3D } from "@/types/point";
 import { generateEntanglementMap } from "@/lib/entanglement";
+import { getQuantumJitter } from "@/lib/quantum";
 
 type PointCloudProps = {
   points: Point3D[];
+  onModeChange?: (
+    mode: "superposition" | "entangled" | "collapsed"
+  ) => void;
 };
 
 type ClusterCenter = {
@@ -30,9 +34,12 @@ type Pulse = {
 };
 
 const POSITION_SCALE = 0.02;
-const HOVER_RADIUS = 0.22;
+const HOVER_RADIUS = 0.2;
 
-export default function PointCloud({ points }: PointCloudProps) {
+export default function PointCloud({
+  points,
+  onModeChange,
+}: PointCloudProps) {
   const pointsRef = useRef<THREE.Points>(null);
   const pointsMaterialRef = useRef<THREE.PointsMaterial>(null);
 
@@ -46,13 +53,17 @@ export default function PointCloud({ points }: PointCloudProps) {
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [pulses, setPulses] = useState<Pulse[]>([]);
+  const [hoveredClusterId, setHoveredClusterId] = useState<number>(-1);
 
   const entanglementMap = useMemo(() => {
     return generateEntanglementMap(points);
   }, [points]);
 
   const clusterCenters = useMemo<ClusterCenter[]>(() => {
-    const map = new Map<number, { sumX: number; sumY: number; sumZ: number; count: number }>();
+    const map = new Map<
+      number,
+      { sumX: number; sumY: number; sumZ: number; count: number }
+    >();
 
     for (const p of points) {
       const current = map.get(p.clusterId) ?? {
@@ -147,14 +158,13 @@ export default function PointCloud({ points }: PointCloudProps) {
       positions[i + 4] = to.y;
       positions[i + 5] = to.z;
 
-      // 기본은 거의 안 보이게
-      colors[i] = 0.15;
-      colors[i + 1] = 0.2;
-      colors[i + 2] = 0.28;
+      colors[i] = 0.18;
+      colors[i + 1] = 0.02;
+      colors[i + 2] = 0.04;
 
-      colors[i + 3] = 0.15;
-      colors[i + 4] = 0.2;
-      colors[i + 5] = 0.28;
+      colors[i + 3] = 0.18;
+      colors[i + 4] = 0.02;
+      colors[i + 5] = 0.04;
     });
 
     const geometry = new THREE.BufferGeometry();
@@ -190,22 +200,25 @@ export default function PointCloud({ points }: PointCloudProps) {
     const canvas = gl.domElement;
 
     function handleClick() {
-  setIsCollapsed((prev) => {
-    const next = !prev;
+      setIsCollapsed((prev) => {
+        const next = !prev;
 
-    if (next) {
-      setPulses([]);
+        if (next) {
+          setPulses([]);
+          onModeChange?.("collapsed");
+        } else {
+          onModeChange?.(hoveredClusterId >= 0 ? "entangled" : "superposition");
+        }
+
+        return next;
+      });
     }
-
-    return next;
-    });
-  }
 
     canvas.addEventListener("click", handleClick);
     return () => {
       canvas.removeEventListener("click", handleClick);
     };
-  }, [gl]);
+  }, [gl, onModeChange, hoveredClusterId]);
 
   useEffect(() => {
     if (!points.length) return;
@@ -214,12 +227,15 @@ export default function PointCloud({ points }: PointCloudProps) {
     let lastHoveredCluster = -1;
 
     const tick = () => {
-      if (isCollapsed) return;
+      if (isCollapsed) {
+        setHoveredClusterId(-1);
+        return;
+      }
 
       const hoverX = mouse.x * 2.2;
       const hoverY = mouse.y * 3.0;
 
-      let hoveredClusterId = -1;
+      let nextHoveredClusterId = -1;
 
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
@@ -231,41 +247,45 @@ export default function PointCloud({ points }: PointCloudProps) {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist < HOVER_RADIUS) {
-          hoveredClusterId = point.clusterId;
+          nextHoveredClusterId = point.clusterId;
           break;
         }
       }
 
-      if (hoveredClusterId === -1) {
+      setHoveredClusterId(nextHoveredClusterId);
+
+      if (nextHoveredClusterId === -1) {
         lastHoveredCluster = -1;
+        onModeChange?.("superposition");
         return;
       }
 
+      onModeChange?.("entangled");
+
       const now = performance.now();
 
-      if (lastHoveredCluster !== hoveredClusterId) {
-        lastHoveredCluster = hoveredClusterId;
+      if (lastHoveredCluster !== nextHoveredClusterId) {
+        lastHoveredCluster = nextHoveredClusterId;
 
-        const linked = entanglementMap[hoveredClusterId] ?? [];
+        const linked = entanglementMap[nextHoveredClusterId] ?? [];
         const newPulses: Pulse[] = linked.map((to, index) => ({
-          from: hoveredClusterId,
+          from: nextHoveredClusterId,
           to,
-          startTime: now + index * 90,
-          duration: 650,
+          startTime: now + index * 110,
+          duration: 700,
         }));
 
         setPulses(newPulses);
-        return;
       }
     };
 
     tick();
-    pulseInterval = window.setInterval(tick, 220);
+    pulseInterval = window.setInterval(tick, 180);
 
     return () => {
       if (pulseInterval) window.clearInterval(pulseInterval);
     };
-  }, [mouse.x, mouse.y, points, isCollapsed, entanglementMap]);
+  }, [mouse.x, mouse.y, points, isCollapsed, entanglementMap, onModeChange]);
 
   useFrame(() => {
     if (
@@ -278,50 +298,41 @@ export default function PointCloud({ points }: PointCloudProps) {
     }
 
     const now = performance.now();
+    const time = now * 0.001;
 
     const pointGeometry = pointsRef.current.geometry;
-    const pointPositionAttr = pointGeometry.getAttribute("position") as THREE.BufferAttribute;
-    const pointColorAttr = pointGeometry.getAttribute("color") as THREE.BufferAttribute;
+    const pointPositionAttr = pointGeometry.getAttribute(
+      "position"
+    ) as THREE.BufferAttribute;
+    const pointColorAttr = pointGeometry.getAttribute(
+      "color"
+    ) as THREE.BufferAttribute;
 
     const lineGeometry = lineRef.current.geometry;
-    const lineColorAttr = lineGeometry.getAttribute("color") as THREE.BufferAttribute;
+    const lineColorAttr = lineGeometry.getAttribute(
+      "color"
+    ) as THREE.BufferAttribute;
 
     const pulseGeometry = pulseRef.current.geometry;
-    const pulsePositionAttr = pulseGeometry.getAttribute("position") as THREE.BufferAttribute;
-    const pulseColorAttr = pulseGeometry.getAttribute("color") as THREE.BufferAttribute;
-
-    const hoverX = mouse.x * 2.2;
-    const hoverY = mouse.y * 3.0;
-
-    let hoveredClusterId = -1;
-
-    if (!isCollapsed) {
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        const px = point.baseX * POSITION_SCALE;
-        const py = point.baseY * POSITION_SCALE;
-
-        const dx = px - hoverX;
-        const dy = py - hoverY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < HOVER_RADIUS) {
-          hoveredClusterId = point.clusterId;
-          break;
-        }
-      }
-    }
+    const pulsePositionAttr = pulseGeometry.getAttribute(
+      "position"
+    ) as THREE.BufferAttribute;
+    const pulseColorAttr = pulseGeometry.getAttribute(
+      "color"
+    ) as THREE.BufferAttribute;
 
     const linkedClusters =
       hoveredClusterId >= 0 ? entanglementMap[hoveredClusterId] ?? [] : [];
 
-    // points update
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
 
       const currentX = pointPositionAttr.getX(i);
       const currentY = pointPositionAttr.getY(i);
       const currentZ = pointPositionAttr.getZ(i);
+
+      const hoverX = mouse.x * 2.2;
+      const hoverY = mouse.y * 3.0;
 
       const pointScreenX = point.baseX * POSITION_SCALE;
       const pointScreenY = point.baseY * POSITION_SCALE;
@@ -338,14 +349,16 @@ export default function PointCloud({ points }: PointCloudProps) {
       const scatterY = point.scatterY * POSITION_SCALE;
       const scatterZ = point.scatterZ * POSITION_SCALE;
 
+      const jitter = getQuantumJitter(point.baseX, point.baseY, time, 0.01);
+
       const isDirectHover = dist < HOVER_RADIUS;
       const isHoveredCluster = point.clusterId === hoveredClusterId;
       const isLinkedCluster = linkedClusters.includes(point.clusterId);
 
-      let targetX = scatterX;
-      let targetY = scatterY;
-      let targetZ = scatterZ;
-      let lerpFactor = 0.05;
+      let targetX = scatterX + jitter.x;
+      let targetY = scatterY + jitter.y;
+      let targetZ = scatterZ + jitter.z;
+      let lerpFactor = 0.045;
 
       if (isCollapsed) {
         targetX = baseX;
@@ -358,10 +371,10 @@ export default function PointCloud({ points }: PointCloudProps) {
         targetZ = baseZ;
         lerpFactor = 0.15;
       } else if (isLinkedCluster) {
-        targetX = THREE.MathUtils.lerp(scatterX, baseX, 0.45);
-        targetY = THREE.MathUtils.lerp(scatterY, baseY, 0.45);
-        targetZ = THREE.MathUtils.lerp(scatterZ, baseZ, 0.45);
-        lerpFactor = 0.08;
+        targetX = THREE.MathUtils.lerp(scatterX, baseX, 0.35);
+        targetY = THREE.MathUtils.lerp(scatterY, baseY, 0.35);
+        targetZ = THREE.MathUtils.lerp(scatterZ, baseZ, 0.35);
+        lerpFactor = 0.07;
       }
 
       const nextX = THREE.MathUtils.lerp(currentX, targetX, lerpFactor);
@@ -377,7 +390,7 @@ export default function PointCloud({ points }: PointCloudProps) {
       } else if (isDirectHover || isHoveredCluster) {
         pointColorAttr.setXYZ(i, 1, 1, 1);
       } else if (isLinkedCluster) {
-        pointColorAttr.setXYZ(i, 0.55, 0.8, 1.0);
+        pointColorAttr.setXYZ(i, 0.72, 0.82, 1.0);
       } else {
         pointColorAttr.setXYZ(i, baseColor, baseColor, baseColor);
       }
@@ -386,49 +399,30 @@ export default function PointCloud({ points }: PointCloudProps) {
     pointPositionAttr.needsUpdate = true;
     pointColorAttr.needsUpdate = true;
 
-  // line update
-  for (let i = 0; i < edges.length; i++) {
-    const edge = edges[i];
-    const baseIndex = i * 2;
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i];
+      const baseIndex = i * 2;
 
-    const isHoveredEdge =
-      hoveredClusterId >= 0 &&
-      (edge.from === hoveredClusterId || edge.to === hoveredClusterId);
+      const isHoveredEdge =
+        hoveredClusterId >= 0 &&
+        (edge.from === hoveredClusterId || edge.to === hoveredClusterId);
 
-    // const isLinkedEdge =
-    //   hoveredClusterId >= 0 &&
-    //   (linkedClusters.includes(edge.from) || linkedClusters.includes(edge.to));
+      let r = 0.18;
+      let g = 0.02;
+      let b = 0.04;
 
-    // default value: black
-    let r = 0.08;
-    let g = 0.0;
-    let b = 0.0;
-
-    // turn to red when hovered
-    if (!isCollapsed) {
-      if (isHoveredEdge) {
-        // hover된 cluster와 직접 연결된 선
-        r = 1.0;
+      if (!isCollapsed && isHoveredEdge) {
+        r = 0.82;
         g = 0.12;
-        b = 0.12;
-      } 
-      // else if (isLinkedEdge) {
-      //   // 연결된 cluster끼리의 연관 선은 더 약하게
-      //   r = 0.55;
-      //   g = 0.05;
-      //   b = 0.05;
-      // }
+        b = 0.18;
+      }
+
+      lineColorAttr.setXYZ(baseIndex, r, g, b);
+      lineColorAttr.setXYZ(baseIndex + 1, r, g, b);
     }
-
-    lineColorAttr.setXYZ(baseIndex, r, g, b);
-    lineColorAttr.setXYZ(baseIndex + 1, r, g, b);
-  }
-
-  lineColorAttr.needsUpdate = true;
 
     lineColorAttr.needsUpdate = true;
 
-    // pulse update
     const activePulses = pulses.filter(
       (pulse) => now >= pulse.startTime && now <= pulse.startTime + pulse.duration
     );
@@ -464,21 +458,20 @@ export default function PointCloud({ points }: PointCloudProps) {
       pulsePositionAttr.setXYZ(i, x, y, z);
 
       const glow = 0.7 + 0.3 * Math.sin(progress * Math.PI);
-      pulseColorAttr.setXYZ(i, 0.8 * glow, 0.92 * glow, 1.0 * glow);
+      pulseColorAttr.setXYZ(i, 0.82 * glow, 0.9 * glow, 1.0 * glow);
     }
 
     pulsePositionAttr.needsUpdate = true;
     pulseColorAttr.needsUpdate = true;
 
-    // material update
-    const pointTargetOpacity = isCollapsed ? 1.0 : 0.95;
+    const pointTargetOpacity = isCollapsed ? 1.0 : 0.92;
     pointsMaterialRef.current.opacity = THREE.MathUtils.lerp(
       pointsMaterialRef.current.opacity,
       pointTargetOpacity,
       0.08
     );
 
-    const pointTargetSize = isCollapsed ? 0.038 : 0.03;
+    const pointTargetSize = isCollapsed ? 0.038 : 0.028;
     pointsMaterialRef.current.size = THREE.MathUtils.lerp(
       pointsMaterialRef.current.size,
       pointTargetSize,
@@ -487,7 +480,7 @@ export default function PointCloud({ points }: PointCloudProps) {
 
     if (lineMaterialRef.current) {
       const targetLineOpacity =
-        isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 0.55 : 0.12;
+        isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 0.42 : 0.08;
 
       lineMaterialRef.current.opacity = THREE.MathUtils.lerp(
         lineMaterialRef.current.opacity,
@@ -497,7 +490,9 @@ export default function PointCloud({ points }: PointCloudProps) {
     }
 
     if (pulseMaterialRef.current) {
-      const targetPulseOpacity = isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 1.0 : 0.0;
+      const targetPulseOpacity =
+        isCollapsed ? 0.0 : hoveredClusterId >= 0 ? 1.0 : 0.0;
+
       pulseMaterialRef.current.opacity = THREE.MathUtils.lerp(
         pulseMaterialRef.current.opacity,
         targetPulseOpacity,
@@ -513,14 +508,14 @@ export default function PointCloud({ points }: PointCloudProps) {
           ref={lineMaterialRef}
           vertexColors
           transparent
-          opacity={0.18}
+          opacity={0.08}
         />
       </lineSegments>
 
       <points ref={pulseRef} geometry={pulseGeometry}>
         <pointsMaterial
           ref={pulseMaterialRef}
-          size={0.06}
+          size={0.055}
           vertexColors
           sizeAttenuation
           transparent
@@ -532,11 +527,12 @@ export default function PointCloud({ points }: PointCloudProps) {
       <points ref={pointsRef} geometry={pointsGeometry}>
         <pointsMaterial
           ref={pointsMaterialRef}
-          size={0.03}
+          size={0.028}
           vertexColors
           sizeAttenuation
           transparent
-          opacity={0.95}
+          opacity={0.92}
+          depthWrite={false}
         />
       </points>
     </group>
