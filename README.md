@@ -1,82 +1,62 @@
-# Entangled Body
+# Entangled Body (Minimal Implementation)
 
-An interactive quantum-inspired art system that allows users to experience the human body as an interconnected, non-local system.
+A minimal interactive prototype of **Entangled Body: A Quantum-Inspired Interactive Experience of the Human Body**
 
----
+This repository contains a lightweight implementation focused on **2D core animation and interaction behavior**, designed to test the visual and structural foundations of the full system.
+Our real project will be in 3D with utilizing the 3rd party human body model and real quantum hardware.
 
-## 🧠 Concept
-
-This project is inspired by traditional East Asian medicine, where treatment is applied not directly to the painful area, but to a connected region of the body.
-
-We extend this idea into a quantum-inspired framework:
-
-> The human body is not a collection of independent parts, but a single entangled system.
-
-Instead of explaining quantum concepts, this project allows users to *experience* them through interaction.
+## 2D rendering
+![result](result.png)
 
 ---
 
-## ⚛️ Core Experience
+## Overview
 
-### 1. Superposition
-- The body is not clearly defined.
-- Point clouds form ambiguous structures.
-- From certain angles, a human shape emerges — from others, it dissolves.
+This prototype represents the human body as a **dynamic point cloud** that continuously shifts between structure and dispersion.
 
-### 2. Measurement
-- User interaction acts as "observation".
-- Hovering or focusing on a region changes the system state.
+Rather than a complete system, this implementation isolates a key idea:
 
-### 3. Entanglement
-- Body regions are non-locally connected.
-- Interacting with one part triggers reactions in distant parts.
+> **Form is not fixed — it emerges from interaction and perspective.**
 
-### 4. Probabilistic Behavior
-- The same interaction does not always produce the same result.
-- Each session generates a different structure.
+The animation demonstrates how a coherent structure can dissolve into particles and reassemble over time, hinting at the concepts of:
 
-### 5. Collapse
-- Upon interaction (click), the system converges.
-- Scattered points align into a coherent human form.
+- Superposition (ambiguous structure)
+- Collapse (emergence of form)
+- Continuous state transition
 
 ---
 
-## 🎮 MVP Features
+## What This Implementation Includes
 
-- Point cloud-based human visualization
-- View-dependent structure visibility
-- Hover interaction with local + non-local responses
-- Entangled cluster connections (visualized with lines)
-- Click-triggered collapse animation
-
----
-
-## 🛠 Tech Stack
-
-- **Frontend**: Next.js, React
-- **3D Rendering**: Three.js, React Three Fiber
-- **Graphics**: Canvas API
-- **Future Integration**:
-  - Qiskit (quantum circuit generation)
-  - IonQ (quantum execution)
+- Minimal point cloud animation
+- Transition between structured and dispersed states
+- Basic rendering pipeline using Three.js / React Three Fiber
+- Lightweight setup for fast iteration
 
 ---
 
-## 🧪 Quantum Integration (Planned)
+## What This Does NOT Include (Yet)
 
-Currently, randomness is generated using `Math.random()`.
+This is an early-stage prototype. The following features are **not implemented**:
 
-In future versions:
-- Entanglement maps will be generated using quantum circuits
-- Collapse states will be sampled from quantum measurement outcomes
-- System behavior will be influenced by real quantum distributions
+- Non-local interaction (entanglement mapping)
+- Probabilistic interaction system
+- User-driven measurement (hover/click effects)
+- Quantum-generated data integration (Qiskit / IonQ)
 
 ---
 
-## 📦 Installation
+## Tech Stack
+
+- Next.js
+- React
+- Three.js
+- React Three Fiber
+
+---
+
+## Getting Started
 
 ```bash
-git clone https://github.com/your-repo/entangled-body
-cd entangled-body
 npm install
 npm run dev
